@@ -221,3 +221,63 @@ export class Dwell {
     return { zone: best, progress: best === null ? 0 : top / this.dwellMs, selected: null };
   }
 }
+
+// Guía para volver a poner el celular donde estaba al calibrar.
+// Compara la posición, el tamaño y el ángulo de la cara en la imagen con los de la calibración.
+const GUIDE = {
+  dist: { i: 8, min: 0.1 },  // Tamaño de la cara (relativo): más grande = más cerca.
+  x: { i: 6, min: 0.045 },
+  y: { i: 7, min: 0.045 },
+  roll: { i: 5, min: 0.12 },
+  yaw: { i: 3, min: 0.07 },
+  pitch: { i: 4, min: 0.07 },
+};
+const MESSAGES = {
+  closer: { icon: '－', text: 'Alejá el celular' },
+  farther: { icon: '＋', text: 'Acercá el celular' },
+  left: { icon: '←', text: 'Mové el celular a la izquierda' },
+  right: { icon: '→', text: 'Mové el celular a la derecha' },
+  up: { icon: '↑', text: 'Subí el celular' },
+  down: { icon: '↓', text: 'Bajá el celular' },
+  roll: { icon: '⟲', text: 'Enderezá el celular' },
+  angle: { icon: '◎', text: 'Poné el celular de frente a la cara' },
+};
+
+export class PoseGuide {
+  constructor() { this.ref = null; this.showing = false; }
+
+  setReference(list) {
+    if (!list.length) { this.ref = null; return; }
+    this.ref = {};
+    for (const [k, { i, min }] of Object.entries(GUIDE)) {
+      const vals = list.map((f) => (k === 'dist' ? Math.log(f[i]) : f[i]));
+      const m = vals.reduce((a, v) => a + v, 0) / vals.length;
+      const sd = Math.sqrt(vals.reduce((a, v) => a + (v - m) ** 2, 0) / vals.length);
+      // Se tolera todo el rango que se recorrió al calibrar: el modelo ya lo conoce.
+      this.ref[k] = { m, tol: Math.max(min, 2 * sd), raw: k === 'dist' ? Math.exp(m) : m };
+    }
+    this.showing = false;
+  }
+
+  // level: 0 = igual que al calibrar; 1 = en el borde de lo que se calibró.
+  check(f) {
+    if (!this.ref) return null;
+    const d = (k) => ((k === 'dist' ? Math.log(f[GUIDE[k].i]) : f[GUIDE[k].i]) - this.ref[k].m) / this.ref[k].tol;
+    const dev = {
+      dist: d('dist'),
+      x: -d('x'), // En la vista de selfie la imagen está espejada.
+      y: d('y'),
+      roll: d('roll'),
+      angle: Math.max(Math.abs(d('yaw')), Math.abs(d('pitch'))),
+    };
+    let key = 'dist', level = 0;
+    for (const [k, v] of Object.entries(dev)) if (Math.abs(v) > level) { level = Math.abs(v); key = k; }
+    let msg;
+    if (key === 'dist') msg = dev.dist > 0 ? MESSAGES.closer : MESSAGES.farther;
+    else if (key === 'x') msg = dev.x > 0 ? MESSAGES.right : MESSAGES.left;
+    else if (key === 'y') msg = dev.y > 0 ? MESSAGES.down : MESSAGES.up;
+    else msg = MESSAGES[key];
+    this.showing = level > (this.showing ? 0.75 : 1);
+    return { level, show: this.showing, ...msg };
+  }
+}

@@ -1,5 +1,5 @@
 import { Predictor, pretty, split, morePages } from './predictor.js';
-import { extractFeatures, GazeModel, OneEuro, classify, Dwell } from './gaze.js';
+import { extractFeatures, GazeModel, OneEuro, classify, Dwell, PoseGuide } from './gaze.js';
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -19,6 +19,7 @@ const settings = {
 const predictor = new Predictor();
 const model = new GazeModel();
 const dwell = new Dwell({ dwellMs: settings.dwell });
+const guide = new PoseGuide();
 const euroX = new OneEuro();
 const euroY = new OneEuro(0.6, 1.0); // El eje vertical es más ruidoso: se suaviza más.
 
@@ -196,6 +197,7 @@ let frames = 0, fps = 0, fpsT = performance.now();
 let currentZone = null;
 let zoneSamples = new Map(); // Rasgos recientes de cada zona, para afinar la calibración.
 let lastFaceWidth = 0;
+let frameSize = { w: 720, h: 1280 };
 
 function onLandmarks(lm, width, height) {
   const t = performance.now();
@@ -206,13 +208,20 @@ function onLandmarks(lm, width, height) {
   lastFace = t;
   const { f, open, faceWidth } = extractFeatures(lm, width, height);
   lastFaceWidth = faceWidth;
+  frameSize = { w: width, h: height };
   openBase = openBase === null ? open : openBase * 0.995 + open * 0.005;
   const blinking = open < openBase * 0.55;
 
   if (mode === 'calib') { if (collector && !blinking) collector.push(f); return; }
+  if (mode === 'reposition') { updateReposition(f, t); return; }
   if (mode !== 'typing' || !model.fitted) return;
   if ($('settings').open) { paint(null, 0); return; }
   $('face-status').textContent = '';
+
+  // Si el celular se alejó mucho de la posición calibrada, se indica cómo volver y se pausa la selección.
+  const g = guide.check(f);
+  showGuide(g);
+  if (g && g.level > 1.6) { dwell.reset(); zoneSamples = new Map(); paint(null, 0); return; }
   if (blinking) return; // Parpadear no cuenta como dejar de mirar.
 
   const raw = model.predict(f);
@@ -245,7 +254,21 @@ function averageFeatures(list) {
   return out;
 }
 
+function showGuide(g) {
+  const el = $('guide');
+  const on = !!(g && g.show);
+  if (el.hidden === on) el.hidden = !on;
+  if (on) {
+    el.querySelector('.icon').textContent = g.icon;
+    el.querySelector('.msg').textContent = g.level > 1.6 ? g.text + '. Pausado hasta volver.' : g.text;
+  }
+}
+
 function handleNoFace(t) {
+  if (mode === 'reposition' && t - lastFace > 500) {
+    setRepoMsg({ icon: '', text: 'No se ve la cara' }, false);
+    drawReposition(null);
+  }
   if (mode === 'typing' && hasGaze && t - lastFace > 700) {
     $('face-status').textContent = 'No se ve tu cara';
     dwell.reset();
@@ -338,6 +361,7 @@ async function runCalibration() {
   msg.textContent = HINT;
   await sleep(3500);
   const range = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity };
+  const poses = [];
 
   const zones = zoneCenters();
   // Cuatro alturas: el eje vertical es el más difícil y necesita más referencias.
@@ -370,6 +394,7 @@ async function runCalibration() {
     if (samples.length < 3) { dot.hidden = true; return failCalibration(); }
     samples.forEach((f) => {
       model.addCalibration(f, t.x, t.y);
+      poses.push(f);
       range.minX = Math.min(range.minX, f[6]); range.maxX = Math.max(range.maxX, f[6]);
       range.minY = Math.min(range.minY, f[7]); range.maxY = Math.max(range.maxY, f[7]);
     });
@@ -401,7 +426,8 @@ async function runCalibration() {
       samples.forEach((f) => extra.push({ f, x: zones[z].x, y: zones[z].y }));
     }
   }
-  extra.forEach((s) => model.addCalibration(s.f, s.x, s.y));
+  extra.forEach((s) => { model.addCalibration(s.f, s.x, s.y); poses.push(s.f); });
+  guide.setReference(poses);
   model.fit();
   mode = 'idle';
   hasGaze = true;
@@ -420,7 +446,7 @@ function showResult(hits, moved) {
   $('btn-go').hidden = false;
   $('result-title').textContent = `Reconoció ${hits} de 6 zonas`;
   $('result-msg').textContent = hits >= 5
-    ? 'La calibración salió bien. Si empieza a elegir mal, tocá Recentrar.'
+    ? 'La calibración salió bien. Si el celular se mueve, arriba te indica cómo volver a ponerlo. Si igual elige mal, tocá Recolocar.'
     : 'Va a costar elegir algunas opciones. Probá de nuevo con buena luz, moviendo el celular despacio.';
   if (!moved) {
     $('result-msg').textContent += ' El celular casi no se movió: si lo vas a usar en la mano, calibrá de nuevo moviéndolo despacio.';
@@ -428,9 +454,76 @@ function showResult(hits, moved) {
   show('screen-result');
 }
 
-// Corrección rápida cuando el celular cambió mucho de posición.
-async function recenter() {
+// Recolocar: guía para volver a la posición de la calibración y después corrige con un punto.
+let repo = null;
+
+async function recolocar() {
   if (mode !== 'typing' || !hasGaze) return;
+  mode = 'reposition';
+  $('guide').hidden = true;
+  paint(null, 0);
+  show('screen-reposition');
+  $('repo-slot').prepend(video);
+  video.classList.add('preview');
+  setRepoMsg({ icon: '', text: 'Buscando la cara…' }, false);
+  const result = await new Promise((resolve) => { repo = { okSince: null, resolve }; });
+  repo = null;
+  video.classList.remove('preview');
+  document.body.append(video);
+  if (result === 'cancel') return backToTyping();
+  await recenterPoint();
+}
+
+function setRepoMsg(m, ok) {
+  const el = $('repo-msg');
+  el.classList.toggle('ok', ok);
+  el.querySelector('.icon').textContent = m.icon;
+  el.querySelector('.msg').textContent = m.text;
+}
+
+function updateReposition(f, t) {
+  if (!repo) return;
+  const g = guide.check(f);
+  drawReposition(f);
+  if (!g) return;
+  if (g.level < 0.6) {
+    setRepoMsg({ icon: '✓', text: 'Así está bien. No lo muevas.' }, true);
+    repo.okSince = repo.okSince ?? t;
+    if (t - repo.okSince > 900) repo.resolve('ok');
+  } else {
+    repo.okSince = null;
+    setRepoMsg(g, false);
+  }
+}
+
+// Dibuja sobre la vista de la cámara (espejada) dónde estaba la cara al calibrar y dónde está ahora.
+function drawReposition(f) {
+  const c = $('repo-canvas');
+  const cw = c.clientWidth, ch = c.clientHeight;
+  if (!cw || !guide.ref) return;
+  const dpr = devicePixelRatio || 1;
+  if (c.width !== Math.round(cw * dpr)) { c.width = Math.round(cw * dpr); c.height = Math.round(ch * dpr); }
+  const ctx = c.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cw, ch);
+  const { w, h } = frameSize;
+  const sc = Math.max(cw / w, ch / h);
+  const ox = (cw - w * sc) / 2, oy = (ch - h * sc) / 2;
+  const at = (x, y, size) => ({ x: cw - (x * w * sc + ox), y: y * h * sc + oy, r: size * Math.max(w, h) * sc * 1.3 });
+  const css = getComputedStyle(document.documentElement);
+  const target = at(guide.ref.x.m, guide.ref.y.m, guide.ref.dist.raw);
+  ctx.lineWidth = 5;
+  ctx.setLineDash([10, 8]);
+  ctx.strokeStyle = css.getPropertyValue('--fixed').trim() || '#ffe48a';
+  ctx.beginPath(); ctx.arc(target.x, target.y, target.r, 0, Math.PI * 2); ctx.stroke();
+  if (!f) return;
+  const now = at(f[6], f[7], f[8]);
+  ctx.setLineDash([]);
+  ctx.strokeStyle = css.getPropertyValue('--fill').trim() || '#9dbcff';
+  ctx.beginPath(); ctx.arc(now.x, now.y, now.r, 0, Math.PI * 2); ctx.stroke();
+}
+
+async function recenterPoint() {
   const zones = zoneCenters();
   const target = { x: 0.5, y: (zones[2].y + zones[3].y) / 2 };
   mode = 'calib';
@@ -449,12 +542,16 @@ async function recenter() {
   msg.textContent = '';
   if (samples.length >= 4) model.recenter(averageFeatures(samples), target.x, target.y);
   feedback();
+  backToTyping();
+  $('face-status').textContent = samples.length >= 4 ? '' : 'No se ve tu cara';
+}
+
+function backToTyping() {
   mode = 'typing';
   dwell.reset();
   zoneSamples = new Map();
   currentZone = null;
   show('');
-  $('face-status').textContent = samples.length >= 4 ? '' : 'No se ve tu cara';
 }
 
 async function beginTyping() {
@@ -546,7 +643,10 @@ $('btn-settings-recal').addEventListener('click', () => {
 });
 $('btn-speak').addEventListener('click', speak);
 $('btn-clear').addEventListener('click', () => { clearAll(); render(); });
-$('btn-recenter').addEventListener('click', recenter);
+$('btn-recenter').addEventListener('click', recolocar);
+$('guide').addEventListener('click', recolocar);
+$('btn-repo-skip').addEventListener('click', () => repo?.resolve('skip'));
+$('btn-repo-cancel').addEventListener('click', () => repo?.resolve('cancel'));
 $('btn-copy').addEventListener('click', async () => {
   const b = $('btn-copy');
   try { await navigator.clipboard.writeText(pretty(text)); b.textContent = 'Copiado'; }
@@ -562,6 +662,7 @@ if (SIM) {
     state: () => ({ text, mode, raw: items, items: items.map((i) => i.ch ?? i.form ?? i.label ?? i.kind) }),
     zones: zoneCenters,
     model,
+    guide,
   };
   $('btn-start').addEventListener('click', () => { lastFace = performance.now(); });
 }

@@ -15,11 +15,12 @@
   <section id="strip">
     <div id="text" aria-live="polite"></div>
     <span id="face-status"></span>
+    <button id="guide" type="button" hidden><span class="icon"></span><span class="msg"></span></button>
     <button id="btn-settings" type="button" aria-label="Ajustes">⚙</button>
     <div id="tools">
       <button id="btn-speak" class="main" type="button">Hablar</button>
       <button id="btn-clear" type="button">Borrar todo</button>
-      <button id="btn-recenter" type="button" hidden>Recentrar</button>
+      <button id="btn-recenter" type="button" hidden>Recolocar</button>
     </div>
   </section>
   <section id="zones"></section>
@@ -42,6 +43,15 @@
   <div id="preview-slot"></div>
   <p id="place-msg">La primera vez puede tardar unos segundos.</p>
   <button class="primary" id="btn-calibrate" type="button" disabled>Calibrar</button>
+</section>
+
+<section class="screen" id="screen-reposition" hidden>
+  <h2 id="repo-title">Volvé a poner el celular como al calibrar</h2>
+  <div id="repo-slot"><canvas id="repo-canvas"></canvas></div>
+  <p id="repo-msg"><span class="icon"></span><span class="msg"></span></p>
+  <p class="note">El círculo punteado marca dónde estaba la cara. Mové el celular hasta que el círculo lleno quede encima.</p>
+  <button class="quiet" id="btn-repo-skip" type="button">Seguir así</button>
+  <button class="quiet" id="btn-repo-cancel" type="button">Cancelar</button>
 </section>
 
 <section class="screen plain" id="screen-calib" hidden>

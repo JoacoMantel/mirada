@@ -9,7 +9,7 @@ Página web para escribir con la mirada desde el celular, usando la cámara fron
 3. Tocá **Calibrar** y seguí los puntos con la mirada. Si lo vas a usar en la mano, mové el celular despacio durante la calibración.
 4. Mirá una opción durante un momento para elegirla. Para descansar, mirá la parte de arriba, donde está el texto.
 
-Si el celular cambió mucho de posición y empieza a elegir mal, tocá **Recentrar** y mirá el punto.
+Si el celular se aleja de la posición en la que se calibró, arriba aparece cómo volver a ponerlo (acercar, alejar, subir, bajar, mover a un costado o enderezar). Si se aleja mucho, la selección se pausa hasta volver. **Recolocar** muestra la cámara con la posición original marcada y, cuando coincide, corrige con un punto.
 
 Desde **Ajustes** podés cambiar el tiempo de mirada, ver dónde detecta la mirada, copiar el texto y volver a calibrar.
 
