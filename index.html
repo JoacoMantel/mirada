@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#f4f7fb" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0a1730" media="(prefers-color-scheme: dark)">
+<title>Mirada</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<video id="video" playsinline muted autoplay></video>
+
+<main id="board">
+  <section id="strip">
+    <div id="text" aria-live="polite"></div>
+    <div id="tools">
+      <span id="face-status"></span>
+      <button id="btn-speak" type="button">Hablar</button>
+      <button id="btn-copy" type="button">Copiar</button>
+      <button id="btn-settings" type="button">Ajustes</button>
+    </div>
+  </section>
+  <section id="zones"></section>
+</main>
+
+<div id="gaze-dot" hidden></div>
+
+<section class="screen" id="screen-intro">
+  <h1>Escribí con la mirada</h1>
+  <p>Mirá una opción durante un momento para elegirla. La cámara detecta hacia dónde mirás.</p>
+  <p>Apoyá el celular en vertical sobre un soporte, a la altura de la cara y a unos 30 cm.</p>
+  <button class="primary" id="btn-start" type="button">Activar la cámara</button>
+  <button class="quiet" id="btn-touch" type="button">Escribir tocando la pantalla</button>
+  <p class="note">El video se procesa en este celular y no se envía a ningún lado.</p>
+  <p class="error" id="start-error" hidden></p>
+</section>
+
+<section class="screen" id="screen-place" hidden>
+  <h2 id="place-title">Preparando la cámara</h2>
+  <div id="preview-slot"></div>
+  <p id="place-msg">La primera vez puede tardar unos segundos.</p>
+  <button class="primary" id="btn-calibrate" type="button" disabled>Calibrar</button>
+</section>
+
+<section class="screen plain" id="screen-calib" hidden>
+  <p id="calib-msg"></p>
+  <div id="calib-dot" hidden></div>
+</section>
+
+<section class="screen" id="screen-result" hidden>
+  <h2 id="result-title"></h2>
+  <p id="result-msg"></p>
+  <button class="primary" id="btn-go" type="button">Empezar a escribir</button>
+  <button class="quiet" id="btn-recal" type="button">Volver a calibrar</button>
+</section>
+
+<dialog id="settings">
+  <form method="dialog">
+    <h2>Ajustes</h2>
+    <label for="set-dwell">Tiempo de mirada: <output id="dwell-value"></output></label>
+    <input type="range" id="set-dwell" min="400" max="2000" step="100">
+    <label class="row"><input type="checkbox" id="set-dot"> Mostrar dónde detecta la mirada</label>
+    <label class="row"><input type="checkbox" id="set-sound"> Sonido al elegir</label>
+    <p class="note" id="diag"></p>
+    <button class="quiet" id="btn-settings-recal" type="button">Volver a calibrar</button>
+    <button class="primary" value="close">Listo</button>
+  </form>
+</dialog>
+
+<script src="vendor/face_mesh/face_mesh.js"></script>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
