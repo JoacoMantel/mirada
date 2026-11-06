@@ -1,7 +1,10 @@
 // De la malla de la cara a un punto de la pantalla. Sin dependencias del navegador.
 
 const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
-const STD_FLOOR = [0.01, 0.01, 0.02, 0.01, 0.01, 0.02, 0.01, 0.01, 0.005];
+const STD_FLOOR = [0.01, 0.01, 0.02, 0.01, 0.01, 0.02, 0.01, 0.01, 0.005, 0.01, 0.002, 0.005];
+// Cada eje usa solo sus rasgos: así el ruido vertical de los ojos no desvía el eje horizontal, ni al revés.
+const X_FEATURES = [0, 3, 5, 6, 8];
+const Y_FEATURES = [1, 2, 4, 5, 7, 8, 9, 10, 11];
 
 export function extractFeatures(lm, width, height) {
   const p = (i) => [lm[i].x * width, lm[i].y * height];
@@ -11,10 +14,14 @@ export function extractFeatures(lm, width, height) {
     const u = [(B[0] - A[0]) / w, (B[1] - A[1]) / w];
     const v = [-u[1], u[0]];
     const d = [I[0] - (A[0] + B[0]) / 2, I[1] - (A[1] + B[1]) / 2];
+    const T = p(top);
+    const iy = (d[0] * v[0] + d[1] * v[1]) / w;
+    const topY = ((T[0] - (A[0] + B[0]) / 2) * v[0] + (T[1] - (A[1] + B[1]) / 2) * v[1]) / w;
     return {
       ix: (d[0] * u[0] + d[1] * u[1]) / w,
-      iy: (d[0] * v[0] + d[1] * v[1]) / w,
-      open: dist(p(top), p(bottom)) / w,
+      iy,
+      upper: iy - topY, // Distancia del iris al párpado superior: baja cuando la mirada baja.
+      open: dist(T, p(bottom)) / w,
     };
   };
   const l = eye(33, 133, 159, 145, 468);
@@ -32,14 +39,17 @@ export function extractFeatures(lm, width, height) {
   const roll = Math.atan2(u[1], u[0]);
   const size = Math.max(width, height);
 
+  const iy = (l.iy + r.iy) / 2;
+  const open = (l.open + r.open) / 2;
   return {
     f: [
-      (l.ix + r.ix) / 2, (l.iy + r.iy) / 2, (l.open + r.open) / 2,
+      (l.ix + r.ix) / 2, iy, open,
       yaw, pitch, roll,
       (eyeA[0] + eyeB[0]) / 2 / width, (eyeA[1] + eyeB[1]) / 2 / height,
       axis / size,
+      (l.upper + r.upper) / 2, iy * iy, open * open,
     ],
-    open: (l.open + r.open) / 2,
+    open,
     faceWidth: axis / width,
   };
 }
@@ -105,33 +115,37 @@ export class GazeModel {
     for (const s of samples) s.f.forEach((v, i) => { this.std[i] += s.w * (v - this.mean[i]) ** 2; });
     this.std = this.std.map((v, i) => Math.max(Math.sqrt(v / W), STD_FLOOR[i] ?? 0.01));
 
-    const d = n + 1;
-    const XtX = Array.from({ length: d }, () => new Array(d).fill(0));
-    const Xtx = new Array(d).fill(0);
-    const Xty = new Array(d).fill(0);
-    for (const s of samples) {
-      const z = this.design(s.f);
-      for (let i = 0; i < d; i++) {
-        Xtx[i] += s.w * z[i] * s.x;
-        Xty[i] += s.w * z[i] * s.y;
-        for (let j = 0; j < d; j++) XtX[i][j] += s.w * z[i] * z[j];
-      }
-    }
-    for (let i = 1; i < d; i++) XtX[i][i] += this.lambda * W;
-    this.bx = solve(XtX, Xtx);
-    this.by = solve(XtX, Xty);
+    this.bx = this.solveAxis(samples, X_FEATURES, 'x');
+    this.by = this.solveAxis(samples, Y_FEATURES, 'y');
     this.fitted = true;
     return true;
   }
 
-  design(f) { return [1, ...f.map((v, i) => (v - this.mean[i]) / this.std[i])]; }
+  solveAxis(samples, features, target) {
+    const d = features.length + 1;
+    const A = Array.from({ length: d }, () => new Array(d).fill(0));
+    const b = new Array(d).fill(0);
+    let W = 0;
+    for (const s of samples) {
+      W += s.w;
+      const z = this.design(s.f, features);
+      for (let i = 0; i < d; i++) {
+        b[i] += s.w * z[i] * s[target];
+        for (let j = 0; j < d; j++) A[i][j] += s.w * z[i] * z[j];
+      }
+    }
+    for (let i = 1; i < d; i++) A[i][i] += this.lambda * W;
+    return solve(A, b);
+  }
+
+  design(f, features) { return [1, ...features.map((i) => (f[i] - this.mean[i]) / this.std[i])]; }
 
   predict(f) {
     if (!this.fitted) return null;
-    const z = this.design(f);
+    const dot = (z, b) => z.reduce((a, v, i) => a + v * b[i], 0);
     return {
-      x: z.reduce((a, v, i) => a + v * this.bx[i], 0),
-      y: z.reduce((a, v, i) => a + v * this.by[i], 0),
+      x: dot(this.design(f, X_FEATURES), this.bx),
+      y: dot(this.design(f, Y_FEATURES), this.by),
     };
   }
 }
@@ -168,34 +182,32 @@ export function classify(point, zones, current = null, restBelowY = 0, hysteresi
   return best;
 }
 
-// Tiempo de mirada: tolera salidas breves y hace una pausa después de cada selección.
+// Tiempo de mirada: cada zona acumula tiempo mientras se la mira y lo pierde de a poco al dejar de mirarla.
+// Así un temblor entre zonas vecinas demora la selección, pero no la reinicia.
 export class Dwell {
-  constructor({ dwellMs = 900, graceMs = 220, refractoryMs = 650 } = {}) {
-    Object.assign(this, { dwellMs, graceMs, refractoryMs });
+  constructor({ dwellMs = 900, decay = 0.7, refractoryMs = 650 } = {}) {
+    Object.assign(this, { dwellMs, decay, refractoryMs });
     this.reset();
   }
-  reset() {
-    this.active = null; this.elapsed = 0; this.awaySince = null;
-    this.lastT = null; this.blockedUntil = 0;
-  }
+  reset() { this.charge = new Map(); this.lastT = null; this.blockedUntil = 0; }
   update(zone, t) {
     const dt = this.lastT === null ? 0 : Math.min(t - this.lastT, 150);
     this.lastT = t;
     if (t < this.blockedUntil) return { zone: null, progress: 0, selected: null };
-    if (zone === this.active && zone !== null) {
-      this.awaySince = null;
-      this.elapsed += dt;
-    } else if (this.active !== null && this.awaySince === null) {
-      this.awaySince = t;
-    } else if (this.active === null || t - this.awaySince >= this.graceMs) {
-      this.active = zone; this.elapsed = 0; this.awaySince = null;
+    for (const [z, c] of this.charge) {
+      if (z !== zone) {
+        const next = c - dt * this.decay;
+        if (next > 0) this.charge.set(z, next); else this.charge.delete(z);
+      }
     }
-    if (this.active !== null && this.elapsed >= this.dwellMs) {
-      const selected = this.active;
-      this.active = null; this.elapsed = 0; this.awaySince = null;
+    if (zone !== null) this.charge.set(zone, (this.charge.get(zone) || 0) + dt);
+    let best = null, top = 0;
+    for (const [z, c] of this.charge) if (c > top) { top = c; best = z; }
+    if (best !== null && top >= this.dwellMs) {
+      this.charge.clear();
       this.blockedUntil = t + this.refractoryMs;
-      return { zone: null, progress: 0, selected };
+      return { zone: null, progress: 0, selected: best };
     }
-    return { zone: this.active, progress: this.active === null ? 0 : this.elapsed / this.dwellMs, selected: null };
+    return { zone: best, progress: best === null ? 0 : top / this.dwellMs, selected: null };
   }
 }

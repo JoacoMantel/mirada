@@ -14,7 +14,7 @@
   --flash: #0a1730;
   --flash-ink: #f4f7fb;
   --danger: #a3161f;
-  --strip-h: 24dvh;
+  --strip-h: 22dvh;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -52,9 +52,10 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--fill); outl
 }
 #text .empty { color: var(--muted); font-size: 18px; line-height: 1.35; }
 #text .caret { display: inline-block; width: .09em; height: 1em; background: var(--ink); vertical-align: -.12em; margin-left: 1px; }
-#tools { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
-#face-status { flex: 1; font-size: 15px; color: var(--danger); font-weight: 700; }
-#tools button { background: var(--tool); border: 0; border-radius: 6px; padding: 5px 12px; font-size: 15px; }
+#tools { display: flex; justify-content: flex-end; gap: 6px; margin-top: 4px; }
+#strip { position: relative; }
+#face-status { position: absolute; top: max(8px, env(safe-area-inset-top)); left: 14px; font-size: 15px; color: var(--danger); font-weight: 700; }
+#tools button { background: var(--tool); border: 0; border-radius: 6px; padding: 5px 9px; font-size: 15px; white-space: nowrap; }
 
 #zones {
   display: grid; grid-template: repeat(3, 1fr) / repeat(2, 1fr); gap: 3px;

@@ -20,7 +20,7 @@ const predictor = new Predictor();
 const model = new GazeModel();
 const dwell = new Dwell({ dwellMs: settings.dwell });
 const euroX = new OneEuro();
-const euroY = new OneEuro();
+const euroY = new OneEuro(0.6, 1.0); // El eje vertical es más ruidoso: se suaviza más.
 
 // ---------- Teclado ----------
 
@@ -133,10 +133,16 @@ function choose(i, sampleFeatures = null) {
     }
     case 'action':
       if (it.action === 'speak') speak();
-      if (it.action === 'clear') { pushState(null); text = ''; menu = []; }
+      if (it.action === 'clear') clearAll();
       break;
   }
   render();
+}
+
+function clearAll() {
+  if (text) pushState(null); // Borrar deshace también esto.
+  text = '';
+  menu = [];
 }
 
 function flash(i) {
@@ -187,7 +193,7 @@ let openBase = null;
 let lastFace = 0;
 let frames = 0, fps = 0, fpsT = performance.now();
 let currentZone = null;
-let dwellSamples = [];
+let zoneSamples = new Map(); // Rasgos recientes de cada zona, para afinar la calibración.
 let lastFaceWidth = 0;
 
 function onLandmarks(lm, width, height) {
@@ -217,11 +223,16 @@ function onLandmarks(lm, width, height) {
   currentZone = classify(point, zones, currentZone, restLine());
   const zoneOk = currentZone !== null && items[currentZone]?.kind !== 'none';
   const res = dwell.update(zoneOk ? currentZone : null, t);
-  if (res.zone !== null) dwellSamples.push(f); else dwellSamples = [];
+  if (zoneOk) {
+    const list = zoneSamples.get(currentZone) || [];
+    list.push(f);
+    if (list.length > 40) list.shift();
+    zoneSamples.set(currentZone, list);
+  }
   paint(res.zone, res.progress);
   if (res.selected !== null) {
-    const samples = dwellSamples;
-    dwellSamples = [];
+    const samples = zoneSamples.get(res.selected) || [];
+    zoneSamples = new Map();
     const mean = samples.length >= 4 ? averageFeatures(samples) : null;
     choose(res.selected, mean);
   }
@@ -327,12 +338,13 @@ async function runCalibration() {
   msg.textContent = '';
 
   const zones = zoneCenters();
-  const ys = [zones[0].y, zones[2].y, zones[4].y];
+  // Cuatro alturas: el eje vertical es el más difícil y necesita más referencias.
+  const ys = [0, 1, 2, 3].map((i) => zones[0].y + (zones[4].y - zones[0].y) * i / 3);
   const xs = [0.14, 0.5, 0.86];
   const targets = [];
   for (const y of ys) for (const x of xs) targets.push({ x, y });
   // Orden que evita saltos previsibles entre puntos vecinos.
-  const order = [4, 0, 8, 2, 6, 1, 7, 3, 5].map((i) => targets[i]);
+  const order = [4, 0, 11, 2, 9, 7, 1, 10, 3, 8, 5, 6].map((i) => targets[i]);
 
   dot.hidden = false;
   for (const t of order) {
@@ -492,6 +504,7 @@ $('btn-settings-recal').addEventListener('click', () => {
   if (faceMesh || SIM) runCalibration(); else show('screen-intro');
 });
 $('btn-speak').addEventListener('click', speak);
+$('btn-clear').addEventListener('click', () => { clearAll(); render(); });
 $('btn-copy').addEventListener('click', async () => {
   const b = $('btn-copy');
   try { await navigator.clipboard.writeText(pretty(text)); b.textContent = 'Copiado'; }
