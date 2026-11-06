@@ -1,10 +1,10 @@
 // De la malla de la cara a un punto de la pantalla. Sin dependencias del navegador.
 
 const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
-const STD_FLOOR = [0.01, 0.01, 0.02, 0.01, 0.01, 0.02, 0.01, 0.01, 0.005, 0.01, 0.002, 0.005];
+const STD_FLOOR = [0.01, 0.01, 0.02, 0.01, 0.01, 0.02, 0.01, 0.01, 0.005, 0.01, 0.002, 0.005, 0.02, 0.02];
 // Cada eje usa solo sus rasgos: así el ruido vertical de los ojos no desvía el eje horizontal, ni al revés.
-const X_FEATURES = [0, 3, 5, 6, 8];
-const Y_FEATURES = [1, 2, 4, 5, 7, 8, 9, 10, 11];
+const X_FEATURES = [0, 3, 5, 6, 12];
+const Y_FEATURES = [1, 2, 4, 5, 7, 9, 10, 11, 13];
 
 export function extractFeatures(lm, width, height) {
   const p = (i) => [lm[i].x * width, lm[i].y * height];
@@ -48,6 +48,7 @@ export function extractFeatures(lm, width, height) {
       (eyeA[0] + eyeB[0]) / 2 / width, (eyeA[1] + eyeB[1]) / 2 / height,
       axis / size,
       (l.upper + r.upper) / 2, iy * iy, open * open,
+      (l.ix + r.ix) / 2 * 0.2 / (axis / size), iy * 0.2 / (axis / size),
     ],
     open,
     faceWidth: axis / width,
@@ -73,8 +74,10 @@ function solve(A, b) {
 
 // Regresión lineal regularizada de rasgos a (x, y) en fracciones de pantalla.
 export class GazeModel {
-  constructor({ lambda = 0.02, maxOnline = 30, onlineWeight = 6 } = {}) {
+  constructor({ lambda = 0.02, maxOnline = 30, onlineWeight = 6, xFeatures = X_FEATURES, yFeatures = Y_FEATURES } = {}) {
     this.lambda = lambda;
+    this.xFeatures = xFeatures;
+    this.yFeatures = yFeatures;
     this.maxOnline = maxOnline;
     this.onlineWeight = onlineWeight;
     this.reset();
@@ -84,10 +87,17 @@ export class GazeModel {
     this.base = [];
     this.online = [];
     this.nextId = 1;
+    this.offset = { x: 0, y: 0 };
     this.fitted = false;
   }
 
   addCalibration(f, x, y) { this.base.push({ f, x, y, w: 1 }); }
+
+  // Corrige la desviación sin recalibrar: se mira un punto conocido y se ajusta la diferencia.
+  recenter(f, x, y) {
+    const p = this.predict(f);
+    this.offset = { x: this.offset.x + x - p.x, y: this.offset.y + y - p.y };
+  }
 
   addOnline(f, x, y) {
     const id = this.nextId++;
@@ -115,8 +125,8 @@ export class GazeModel {
     for (const s of samples) s.f.forEach((v, i) => { this.std[i] += s.w * (v - this.mean[i]) ** 2; });
     this.std = this.std.map((v, i) => Math.max(Math.sqrt(v / W), STD_FLOOR[i] ?? 0.01));
 
-    this.bx = this.solveAxis(samples, X_FEATURES, 'x');
-    this.by = this.solveAxis(samples, Y_FEATURES, 'y');
+    this.bx = this.solveAxis(samples, this.xFeatures, 'x');
+    this.by = this.solveAxis(samples, this.yFeatures, 'y');
     this.fitted = true;
     return true;
   }
@@ -144,8 +154,8 @@ export class GazeModel {
     if (!this.fitted) return null;
     const dot = (z, b) => z.reduce((a, v, i) => a + v * b[i], 0);
     return {
-      x: dot(this.design(f, X_FEATURES), this.bx),
-      y: dot(this.design(f, Y_FEATURES), this.by),
+      x: dot(this.design(f, this.xFeatures), this.bx) + this.offset.x,
+      y: dot(this.design(f, this.yFeatures), this.by) + this.offset.y,
     };
   }
 }

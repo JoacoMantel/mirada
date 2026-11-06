@@ -14,7 +14,7 @@
   --flash: #0a1730;
   --flash-ink: #f4f7fb;
   --danger: #a3161f;
-  --strip-h: 22dvh;
+  --strip-h: max(24dvh, 150px);
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -43,19 +43,30 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--fill); outl
 #board { position: fixed; inset: 0; display: grid; grid-template-rows: var(--strip-h) 1fr; }
 
 #strip {
-  display: grid; grid-template-rows: 1fr auto;
-  padding: max(10px, env(safe-area-inset-top)) 14px 6px; min-height: 0;
+  position: relative; display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 8px; min-height: 0;
+  padding: max(8px, env(safe-area-inset-top)) 10px 8px;
 }
 #text {
-  overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end;
-  font-size: clamp(22px, 6.6vw, 40px); line-height: 1.2; white-space: pre-wrap; overflow-wrap: anywhere;
+  overflow: hidden; padding: 0 42px 0 4px;
+  font-size: clamp(22px, 6.6vw, 40px); line-height: 1.18; white-space: pre-wrap; overflow-wrap: anywhere;
 }
-#text .empty { color: var(--muted); font-size: 18px; line-height: 1.35; }
+#text .empty { color: var(--muted); font-size: 17px; line-height: 1.3; }
 #text .caret { display: inline-block; width: .09em; height: 1em; background: var(--ink); vertical-align: -.12em; margin-left: 1px; }
-#tools { display: flex; justify-content: flex-end; gap: 6px; margin-top: 4px; }
-#strip { position: relative; }
-#face-status { position: absolute; top: max(8px, env(safe-area-inset-top)); left: 14px; font-size: 15px; color: var(--danger); font-weight: 700; }
-#tools button { background: var(--tool); border: 0; border-radius: 6px; padding: 5px 9px; font-size: 15px; white-space: nowrap; }
+#face-status {
+  position: absolute; left: 10px; top: max(8px, env(safe-area-inset-top)); padding: 2px 8px;
+  background: var(--chart); color: var(--danger); font-size: 16px; font-weight: 700;
+}
+#face-status:empty { display: none; }
+#btn-settings {
+  position: absolute; right: 6px; top: max(4px, env(safe-area-inset-top));
+  width: 44px; height: 44px; background: none; border: 0; font-size: 26px; color: var(--muted);
+}
+#tools { display: flex; gap: 8px; height: clamp(58px, 9.5dvh, 84px); }
+#tools button {
+  flex: 1 1 0; min-width: 0; border: 0; border-radius: 8px; background: var(--tool);
+  font-size: clamp(16px, 4.7vw, 22px); font-weight: 700; line-height: 1.05; padding: 4px;
+}
+#tools button.main { flex-grow: 1.45; background: var(--ink); color: var(--chart); font-size: clamp(22px, 7vw, 32px); }
 
 #zones {
   display: grid; grid-template: repeat(3, 1fr) / repeat(2, 1fr); gap: 3px;

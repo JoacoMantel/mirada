@@ -4,12 +4,14 @@ Página web para escribir con la mirada desde el celular, usando la cámara fron
 
 ## Cómo usarla
 
-1. Apoyá el celular en vertical sobre un soporte, a la altura de la cara y a unos 30 cm.
+1. Sostené el celular en vertical frente a la cara, a unos 30 cm. También se puede usar un soporte.
 2. Tocá **Activar la cámara** y dale permiso.
-3. Tocá **Calibrar** y seguí los puntos con la mirada.
+3. Tocá **Calibrar** y seguí los puntos con la mirada. Si lo vas a usar en la mano, mové el celular despacio durante la calibración.
 4. Mirá una opción durante un momento para elegirla. Para descansar, mirá la parte de arriba, donde está el texto.
 
-Desde **Ajustes** podés cambiar el tiempo de mirada, ver dónde detecta la mirada y volver a calibrar.
+Si el celular cambió mucho de posición y empieza a elegir mal, tocá **Recentrar** y mirá el punto.
+
+Desde **Ajustes** podés cambiar el tiempo de mirada, ver dónde detecta la mirada, copiar el texto y volver a calibrar.
 
 ## Publicarla con GitHub Pages
 

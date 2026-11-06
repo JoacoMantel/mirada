@@ -15,11 +15,11 @@
   <section id="strip">
     <div id="text" aria-live="polite"></div>
     <span id="face-status"></span>
+    <button id="btn-settings" type="button" aria-label="Ajustes">⚙</button>
     <div id="tools">
-      <button id="btn-speak" type="button">Hablar</button>
-      <button id="btn-copy" type="button">Copiar</button>
+      <button id="btn-speak" class="main" type="button">Hablar</button>
       <button id="btn-clear" type="button">Borrar todo</button>
-      <button id="btn-settings" type="button">Ajustes</button>
+      <button id="btn-recenter" type="button" hidden>Recentrar</button>
     </div>
   </section>
   <section id="zones"></section>
@@ -30,7 +30,7 @@
 <section class="screen" id="screen-intro">
   <h1>Escribí con la mirada</h1>
   <p>Mirá una opción durante un momento para elegirla. La cámara detecta hacia dónde mirás.</p>
-  <p>Apoyá el celular en vertical sobre un soporte, a la altura de la cara y a unos 30 cm.</p>
+  <p>Sostené el celular en vertical frente a la cara, a unos 30 cm. También se puede usar un soporte.</p>
   <button class="primary" id="btn-start" type="button">Activar la cámara</button>
   <button class="quiet" id="btn-touch" type="button">Escribir tocando la pantalla</button>
   <p class="note">El video se procesa en este celular y no se envía a ningún lado.</p>
@@ -64,6 +64,7 @@
     <label class="row"><input type="checkbox" id="set-dot"> Mostrar dónde detecta la mirada</label>
     <label class="row"><input type="checkbox" id="set-sound"> Sonido al elegir</label>
     <p class="note" id="diag"></p>
+    <button class="quiet" id="btn-copy" type="button">Copiar el texto</button>
     <button class="quiet" id="btn-settings-recal" type="button">Volver a calibrar</button>
     <button class="primary" value="close">Listo</button>
   </form>

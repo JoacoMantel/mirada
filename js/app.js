@@ -93,6 +93,7 @@ function render() {
     c.className = 'caret';
     line.append(c);
     $('text').append(line);
+    $('text').scrollTop = $('text').scrollHeight; // Siempre a la vista lo último que se escribió.
   }
 }
 
@@ -300,7 +301,7 @@ function placementLoop() {
   const btn = $('btn-calibrate');
   btn.disabled = !seen;
   $('place-title').textContent = seen ? 'Tu cara está en cuadro' : 'Mostrá tu cara a la cámara';
-  let msg = 'Si podés, buscá una luz de frente y evitá tener una ventana detrás.';
+  let msg = 'Sostené el celular firme y con luz de frente. Evitá tener una ventana detrás.';
   if (!seen) msg = 'Sacate los anteojos si reflejan y mirá de frente al celular.';
   else if (lastFaceWidth < 0.17) msg = 'Acercá un poco el celular.';
   else if (lastFaceWidth > 0.6) msg = 'Alejá un poco el celular.';
@@ -333,9 +334,10 @@ async function runCalibration() {
   screen.classList.remove('testing');
   const msg = $('calib-msg');
   const dot = $('calib-dot');
-  msg.textContent = 'Sin mover la cabeza, seguí cada punto con la mirada hasta que desaparezca.';
-  await sleep(2600);
-  msg.textContent = '';
+  const HINT = 'Seguí cada punto con la mirada. Si sostenés el celular, movelo despacio un poco para todos lados.';
+  msg.textContent = HINT;
+  await sleep(3500);
+  const range = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity };
 
   const zones = zoneCenters();
   // Cuatro alturas: el eje vertical es el más difícil y necesita más referencias.
@@ -363,13 +365,19 @@ async function runCalibration() {
       msg.textContent = 'No se ve tu cara. Mirá el punto.';
       samples = samples.concat(await collectAt(1100));
     }
-    msg.textContent = '';
+    msg.textContent = HINT;
     clearInterval(shrink);
     if (samples.length < 3) { dot.hidden = true; return failCalibration(); }
-    samples.forEach((f) => model.addCalibration(f, t.x, t.y));
+    samples.forEach((f) => {
+      model.addCalibration(f, t.x, t.y);
+      range.minX = Math.min(range.minX, f[6]); range.maxX = Math.max(range.maxX, f[6]);
+      range.minY = Math.min(range.minY, f[7]); range.maxY = Math.max(range.maxY, f[7]);
+    });
   }
   dot.hidden = true;
+  msg.textContent = '';
   if (!model.fit()) return failCalibration();
+  const moved = range.maxX - range.minX > 0.05 || range.maxY - range.minY > 0.05;
 
   // Prueba real con las 6 zonas: mide y también afina el ajuste.
   screen.classList.add('testing');
@@ -397,7 +405,7 @@ async function runCalibration() {
   model.fit();
   mode = 'idle';
   hasGaze = true;
-  showResult(hits);
+  showResult(hits, moved);
 }
 
 function failCalibration() {
@@ -408,13 +416,45 @@ function failCalibration() {
   show('screen-result');
 }
 
-function showResult(hits) {
+function showResult(hits, moved) {
   $('btn-go').hidden = false;
   $('result-title').textContent = `Reconoció ${hits} de 6 zonas`;
   $('result-msg').textContent = hits >= 5
-    ? 'La calibración salió bien. Si con el uso empieza a fallar, volvé a calibrar desde Ajustes.'
-    : 'Va a costar elegir algunas opciones. Probá de nuevo con el celular fijo, buena luz y la cabeza quieta.';
+    ? 'La calibración salió bien. Si empieza a elegir mal, tocá Recentrar.'
+    : 'Va a costar elegir algunas opciones. Probá de nuevo con buena luz, moviendo el celular despacio.';
+  if (!moved) {
+    $('result-msg').textContent += ' El celular casi no se movió: si lo vas a usar en la mano, calibrá de nuevo moviéndolo despacio.';
+  }
   show('screen-result');
+}
+
+// Corrección rápida cuando el celular cambió mucho de posición.
+async function recenter() {
+  if (mode !== 'typing' || !hasGaze) return;
+  const zones = zoneCenters();
+  const target = { x: 0.5, y: (zones[2].y + zones[3].y) / 2 };
+  mode = 'calib';
+  show('screen-calib');
+  $('screen-calib').classList.remove('testing');
+  const msg = $('calib-msg');
+  const dot = $('calib-dot');
+  msg.textContent = 'Mirá el punto.';
+  dot.style.left = target.x * innerWidth + 'px';
+  dot.style.top = target.y * innerHeight + 'px';
+  dot.style.setProperty('--s', 1);
+  dot.hidden = false;
+  await sleep(700);
+  const samples = await collectAt(900);
+  dot.hidden = true;
+  msg.textContent = '';
+  if (samples.length >= 4) model.recenter(averageFeatures(samples), target.x, target.y);
+  feedback();
+  mode = 'typing';
+  dwell.reset();
+  zoneSamples = new Map();
+  currentZone = null;
+  show('');
+  $('face-status').textContent = samples.length >= 4 ? '' : 'No se ve tu cara';
 }
 
 async function beginTyping() {
@@ -423,6 +463,7 @@ async function beginTyping() {
   currentZone = null;
   show('');
   $('gaze-dot').hidden = !settings.dot || !hasGaze;
+  $('btn-recenter').hidden = !hasGaze;
   render();
   try { if (navigator.wakeLock) wakeLock = await navigator.wakeLock.request('screen'); } catch { /* opcional */ }
 }
@@ -505,11 +546,12 @@ $('btn-settings-recal').addEventListener('click', () => {
 });
 $('btn-speak').addEventListener('click', speak);
 $('btn-clear').addEventListener('click', () => { clearAll(); render(); });
+$('btn-recenter').addEventListener('click', recenter);
 $('btn-copy').addEventListener('click', async () => {
   const b = $('btn-copy');
   try { await navigator.clipboard.writeText(pretty(text)); b.textContent = 'Copiado'; }
   catch { b.textContent = 'No se pudo copiar'; }
-  setTimeout(() => { b.textContent = 'Copiar'; }, 1500);
+  setTimeout(() => { b.textContent = 'Copiar el texto'; }, 1500);
 });
 
 render();
